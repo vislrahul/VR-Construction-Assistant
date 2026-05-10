@@ -585,18 +585,28 @@ Vertical: ${vertical}`
       "Yes sir."
     );
 
-  } catch (error) {
+ } catch (error) {
 
-    console.log(error);
+  console.log("FULL ERROR:");
+  console.log(error);
 
-    bot.sendMessage(
-      msg.chat.id,
-      "AI error occurred sir."
-    );
-
+  if (error.message) {
+    console.log("MESSAGE:", error.message);
   }
 
-});
+  if (error.details) {
+    console.log("DETAILS:", error.details);
+  }
+
+  if (error.hint) {
+    console.log("HINT:", error.hint);
+  }
+
+  bot.sendMessage(
+    msg.chat.id,
+    "AI error occurred sir."
+  );
+}
 
 // =========================
 // HOME
