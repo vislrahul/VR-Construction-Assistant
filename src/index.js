@@ -24,12 +24,27 @@ const bot = new TelegramBot(
   }
 );
 
+const userMemory = {};
+
 bot.on("message", async (msg) => {
 
   try {
 
     const chatId = msg.chat.id;
     const text = msg.text;
+    
+    // USER MEMORY
+if (!userMemory[chatId]) {
+
+  userMemory[chatId] = {
+    pendingIntent: null,
+    data: {},
+  };
+
+}
+
+const memory =
+  userMemory[chatId];
 
     if (!text) return;
 
@@ -44,23 +59,30 @@ bot.on("message", async (msg) => {
           type: "json_object",
         },
 
-        messages: [
-          {
-            role: "system",
-            content: `
+       messages: [
+  {
+    role: "system",
+    content: `
 You are VR Construction AI Assistant.
 
-You are an intelligent assistant for a construction business owner.
+You are a smart conversational AI assistant for a construction business owner.
 
-The user talks casually in English, Hindi, or mixed language.
+You must continue previous incomplete conversations naturally.
+
+Current pending intent:
+${memory.pendingIntent || "none"}
+
+Current saved data:
+${JSON.stringify(memory.data)}
 
 You must:
-- understand natural chatting
-- detect intent
-- extract data
-- ask for missing fields naturally
+- understand follow-up replies
+- understand partial answers
+- understand Hindi + English mixed chatting
+- understand construction business operations
+- ask for missing details naturally
 - behave like a real assistant
-- always call user "sir"
+- always call user sir
 
 Return ONLY valid JSON.
 
@@ -85,56 +107,55 @@ INTENTS:
 EXAMPLES:
 
 USER:
-"Raju ko 5000 advance diya"
+"Raju ko 5000 diya"
 
 RETURN:
 {
   "intent": "labour_payment",
-  "message": "Sir ₹5000 payment for Raju noted. Cash tha ya online?",
+  "message": "Sir payment cash tha ya online?",
   "data": {
     "labour_name": "Raju",
-    "amount": 5000,
-    "payment_type": "advance"
+    "amount": 5000
   },
   "missing_fields": ["mode"]
 }
 
 USER:
-"cement kharida"
+"online from AU bank"
 
 RETURN:
 {
-  "intent": "expense",
-  "message": "Sir amount kitna tha aur kis project me add karna hai?",
+  "intent": "labour_payment",
+  "message": "Sir advance tha ya salary payment?",
   "data": {
-    "category": "material"
+    "mode": "online",
+    "bank": "AU Bank"
   },
-  "missing_fields": ["amount", "project"]
+  "missing_fields": ["payment_type"]
 }
 
 USER:
-"quotation SHK ko bhej diya"
+"advance"
 
 RETURN:
 {
-  "intent": "quotation",
-  "message": "Okay sir. Quotation amount kitna tha aur kaunsa project tha?",
+  "intent": "labour_payment",
+  "message": "Okay sir. Payment recorded successfully.",
   "data": {
-    "client": "SHK"
+    "payment_type": "advance"
   },
-  "missing_fields": ["amount", "project"]
+  "missing_fields": []
 }
 
-Always keep replies short and natural.
+Always keep responses short and natural.
 `
-          },
+  },
 
-          {
-            role: "user",
-            content: text,
-          },
-        ],
-      });
+  {
+    role: "user",
+    content: text,
+  },
+],
 
     // PARSE AI RESPONSE
     const aiResponse = JSON.parse(
@@ -151,6 +172,16 @@ Always keep replies short and natural.
 
     const missingFields =
       aiResponse.missing_fields || [];
+
+    // SAVE MEMORY
+memory.pendingIntent = intent;
+
+memory.data = {
+  ...memory.data,
+  ...data,
+};
+
+userMemory[chatId] = memory;
 
     // IF DETAILS MISSING
     if (missingFields.length > 0) {
