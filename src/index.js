@@ -156,6 +156,7 @@ Always keep responses short and natural.
     content: text,
   },
 ],
+});
 
     // PARSE AI RESPONSE
     const aiResponse = JSON.parse(
