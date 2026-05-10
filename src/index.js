@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import TelegramBot from "node-telegram-bot-api";
 import OpenAI from "openai";
+import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
 
@@ -10,6 +11,11 @@ const app = express();
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
   polling: true,
