@@ -37,7 +37,7 @@ const bot = new TelegramBot(
 );
 
 // =========================
-// CLEAR MEMORY FUNCTION
+// CLEAR MEMORY
 // =========================
 
 async function clearMemory(chatId) {
@@ -50,7 +50,61 @@ async function clearMemory(chatId) {
 }
 
 // =========================
-// TELEGRAM BOT
+// SAVE MEMORY
+// =========================
+
+async function saveMemory(
+  chatId,
+  intent,
+  data
+) {
+
+  await supabase
+    .from("conversation_memory")
+    .upsert([
+      {
+        chat_id: String(chatId),
+        pending_intent: intent,
+        memory_data: data,
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+
+}
+
+// =========================
+// LOAD MEMORY
+// =========================
+
+async function loadMemory(chatId) {
+
+  const { data } =
+    await supabase
+      .from("conversation_memory")
+      .select("*")
+      .eq("chat_id", String(chatId))
+      .single();
+
+  if (!data) {
+
+    return {
+      pendingIntent: null,
+      data: {},
+    };
+
+  }
+
+  return {
+    pendingIntent:
+      data.pending_intent,
+    data:
+      data.memory_data || {},
+  };
+
+}
+
+// =========================
+// TELEGRAM MESSAGE
 // =========================
 
 bot.on("message", async (msg) => {
@@ -65,30 +119,11 @@ bot.on("message", async (msg) => {
     console.log("USER:", text);
 
     // =========================
-    // LOAD MEMORY FROM SUPABASE
+    // LOAD MEMORY
     // =========================
 
-    let memory = {
-      pendingIntent: null,
-      data: {},
-    };
-
-    const { data: memoryRow } =
-      await supabase
-        .from("conversation_memory")
-        .select("*")
-        .eq("chat_id", String(chatId))
-        .single();
-
-    if (memoryRow) {
-
-      memory.pendingIntent =
-        memoryRow.pending_intent;
-
-      memory.data =
-        memoryRow.memory_data || {};
-
-    }
+    const memory =
+      await loadMemory(chatId);
 
     // =========================
     // AI UNDERSTANDING
@@ -109,26 +144,31 @@ bot.on("message", async (msg) => {
             content: `
 You are VR Construction AI Assistant.
 
-You are a smart conversational AI assistant for a construction business owner.
+You are a smart AI assistant for a construction company owner.
+
+You behave like a real human assistant.
 
 You must continue previous incomplete conversations naturally.
 
-Current pending intent:
+CURRENT PENDING INTENT:
 ${memory.pendingIntent || "none"}
 
-Current saved data:
+CURRENT MEMORY:
 ${JSON.stringify(memory.data)}
 
-You must:
-- understand follow-up replies
-- understand partial answers
-- understand Hindi + English mixed chatting
-- understand construction business operations
-- ask for missing details naturally
-- behave like a real assistant
-- always call user sir
+IMPORTANT RULES:
 
-Return ONLY valid JSON.
+- Understand casual chatting
+- Understand Hindi + English mixed language
+- Understand follow-up replies
+- Understand partial answers
+- Never ask again for details already provided
+- Merge old conversation memory with new replies
+- Always behave intelligently
+- Always call the user "sir"
+- Keep replies short and natural
+
+RETURN ONLY VALID JSON.
 
 FORMAT:
 
@@ -139,7 +179,7 @@ FORMAT:
   "missing_fields": []
 }
 
-INTENTS:
+VALID INTENTS:
 - labour_payment
 - expense
 - attendance
@@ -151,7 +191,7 @@ INTENTS:
 EXAMPLES:
 
 USER:
-"Raju ko 5000 diya"
+"paid 4100 advance to Raju"
 
 RETURN:
 {
@@ -159,39 +199,54 @@ RETURN:
   "message": "Sir payment cash tha ya online?",
   "data": {
     "labour_name": "Raju",
-    "amount": 5000
+    "amount": 4100,
+    "payment_type": "advance"
   },
   "missing_fields": ["mode"]
 }
 
 USER:
-"online from AU bank"
-
-RETURN:
-{
-  "intent": "labour_payment",
-  "message": "Sir advance tha ya salary payment?",
-  "data": {
-    "mode": "online",
-    "bank": "AU Bank"
-  },
-  "missing_fields": ["payment_type"]
-}
-
-USER:
-"advance"
+"online through phonepe"
 
 RETURN:
 {
   "intent": "labour_payment",
   "message": "Okay sir. Payment recorded successfully.",
   "data": {
-    "payment_type": "advance"
+    "mode": "online",
+    "bank": "PhonePe"
   },
   "missing_fields": []
 }
 
-Always keep replies short and natural.
+USER:
+"cement kharida 3200 ka"
+
+RETURN:
+{
+  "intent": "expense",
+  "message": "Sir which project should I record this under?",
+  "data": {
+    "category": "material",
+    "amount": 3200
+  },
+  "missing_fields": ["project"]
+}
+
+USER:
+"Anjali Ghadge site"
+
+RETURN:
+{
+  "intent": "expense",
+  "message": "Okay sir. Expense recorded.",
+  "data": {
+    "project": "Anjali Ghadge site"
+  },
+  "missing_fields": []
+}
+
+Always return valid JSON only.
 `
           },
 
@@ -203,7 +258,7 @@ Always keep replies short and natural.
       });
 
     // =========================
-    // PARSE AI RESPONSE
+    // PARSE RESPONSE
     // =========================
 
     const aiResponse = JSON.parse(
@@ -213,60 +268,50 @@ Always keep replies short and natural.
     console.log("AI:", aiResponse);
 
     const intent =
-      aiResponse.intent || "general_chat";
+      aiResponse.intent ||
+      "general_chat";
 
     // =========================
-    // MERGE OLD + NEW DATA
+    // MERGE MEMORY
     // =========================
 
-    const data = {
+    const mergedData = {
       ...memory.data,
       ...(aiResponse.data || {}),
     };
 
     // REMOVE EMPTY VALUES
 
-    Object.keys(data).forEach((key) => {
+    Object.keys(mergedData)
+      .forEach((key) => {
 
-      if (
-        data[key] === null ||
-        data[key] === "" ||
-        data[key] === undefined
-      ) {
+        if (
+          mergedData[key] === null ||
+          mergedData[key] === "" ||
+          mergedData[key] === undefined
+        ) {
 
-        delete data[key];
+          delete mergedData[key];
 
-      }
+        }
 
-    });
+      });
 
     const missingFields =
       aiResponse.missing_fields || [];
 
     // =========================
-    // SAVE MEMORY TO SUPABASE
+    // SAVE MEMORY
     // =========================
 
-    memory.pendingIntent = intent;
-
-    memory.data = data;
-
-    await supabase
-      .from("conversation_memory")
-      .upsert([
-        {
-          chat_id: String(chatId),
-          pending_intent:
-            memory.pendingIntent,
-          memory_data:
-            memory.data,
-          updated_at:
-            new Date().toISOString(),
-        },
-      ]);
+    await saveMemory(
+      chatId,
+      intent,
+      mergedData
+    );
 
     // =========================
-    // ASK FOR MISSING DETAILS
+    // ASK MISSING DETAILS
     // =========================
 
     if (missingFields.length > 0) {
@@ -285,16 +330,19 @@ Always keep replies short and natural.
     if (intent === "labour_payment") {
 
       const labourName =
-        data.labour_name || "Unknown";
+        mergedData.labour_name || "Unknown";
 
       const amount =
-        data.amount || 0;
+        mergedData.amount || 0;
 
       const mode =
-        data.mode || "cash";
+        mergedData.mode || "cash";
 
       const paymentType =
-        data.payment_type || "regular";
+        mergedData.payment_type || "regular";
+
+      const bank =
+        mergedData.bank || null;
 
       await supabase
         .from("labour_payments")
@@ -304,6 +352,7 @@ Always keep replies short and natural.
             amount: amount,
             mode: mode,
             payment_type: paymentType,
+            bank: bank,
           },
         ]);
 
@@ -328,13 +377,13 @@ Type: ${paymentType}`
     if (intent === "expense") {
 
       const category =
-        data.category || "General";
+        mergedData.category || "General";
 
       const amount =
-        data.amount || 0;
+        mergedData.amount || 0;
 
       const project =
-        data.project || "General";
+        mergedData.project || "General";
 
       await supabase
         .from("transactions")
@@ -367,10 +416,10 @@ Project: ${project}`
     if (intent === "attendance") {
 
       const labourName =
-        data.labour_name || "Unknown";
+        mergedData.labour_name || "Unknown";
 
       const shift =
-        data.shift || "full";
+        mergedData.shift || "full";
 
       await supabase
         .from("attendance")
@@ -400,13 +449,16 @@ Shift: ${shift}`
     if (intent === "create_project") {
 
       const projectName =
-        data.project_name || "Untitled Project";
+        mergedData.project_name ||
+        "Untitled Project";
 
       const clientName =
-        data.client_name || "Unknown Client";
+        mergedData.client_name ||
+        "Unknown Client";
 
       const vertical =
-        data.vertical || "General";
+        mergedData.vertical ||
+        "General";
 
       let clientId = null;
 
