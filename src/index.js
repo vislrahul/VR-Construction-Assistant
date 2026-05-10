@@ -311,7 +311,7 @@ Always:
     ],
   });
 
-    const aiResponse = JSON.parse(
+const aiResponse = JSON.parse(
   completion.choices[0].message.content
 );
 
@@ -324,7 +324,18 @@ bot.sendMessage(
   chatId,
   replyMessage
 );
-    
+
+  } catch (error) {
+
+    console.log(error);
+
+    bot.sendMessage(
+      msg.chat.id,
+      "AI error occurred."
+    );
+  }
+});
+
 app.get("/", (req, res) => {
   res.send("VR Construction AI Running");
 });
