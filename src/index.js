@@ -61,6 +61,32 @@ app.get("/", (req, res) => {
   res.send("VR Construction AI Running");
 });
 
+app.get("/test-db", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("projects")
+      .select("*")
+      .limit(1);
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error,
+      });
+    }
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      err,
+    });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
