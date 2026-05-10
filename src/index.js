@@ -117,7 +117,118 @@ Code: ${project.project_code}
 Vertical: ${project.vertical}`
       );
     }
+    // EXPENSE ENTRY
+    if (text.toLowerCase().startsWith("expense")) {
 
+      const lines = text.split("\n");
+
+      let projectName = "";
+      let type = "";
+      let amount = 0;
+      let vendorName = "";
+      let note = "";
+
+      lines.forEach((line) => {
+
+        if (line.toLowerCase().includes("project:")) {
+          projectName = line.split(":")[1]?.trim();
+        }
+
+        if (line.toLowerCase().includes("type:")) {
+          type = line.split(":")[1]?.trim();
+        }
+
+        if (line.toLowerCase().includes("amount:")) {
+          amount = Number(
+            line.split(":")[1]?.trim()
+          );
+        }
+
+        if (line.toLowerCase().includes("vendor:")) {
+          vendorName = line.split(":")[1]?.trim();
+        }
+
+        if (line.toLowerCase().includes("note:")) {
+          note = line.split(":")[1]?.trim();
+        }
+
+      });
+
+      // FIND PROJECT
+      const { data: projectData } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("project_name", projectName)
+        .single();
+
+      if (!projectData) {
+
+        return bot.sendMessage(
+          chatId,
+          "Project not found."
+        );
+
+      }
+
+      // FIND OR CREATE VENDOR
+      let vendorId = null;
+
+      const { data: existingVendor } = await supabase
+        .from("vendors")
+        .select("*")
+        .eq("vendor_name", vendorName)
+        .single();
+
+      if (existingVendor) {
+
+        vendorId = existingVendor.id;
+
+      } else {
+
+        const { data: newVendor } = await supabase
+          .from("vendors")
+          .insert([
+            {
+              vendor_name: vendorName,
+            },
+          ])
+          .select()
+          .single();
+
+        vendorId = newVendor.id;
+      }
+
+      // INSERT TRANSACTION
+      const { error: transactionError } =
+        await supabase
+          .from("transactions")
+          .insert([
+            {
+              project_id: projectData.id,
+              type: "Expense",
+              category: type,
+              amount: amount,
+              vendor_id: vendorId,
+              notes: note,
+              payment_status: "Paid",
+            },
+          ]);
+
+      if (transactionError) {
+        throw transactionError;
+      }
+
+      return bot.sendMessage(
+        chatId,
+        `✅ Expense Saved
+
+Project: ${projectName}
+Amount: ₹${amount}
+Vendor: ${vendorName}
+Type: ${type}`
+      );
+    }
+    
     // NORMAL AI CHAT
     const completion =
       await openai.chat.completions.create({
