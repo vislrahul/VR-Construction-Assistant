@@ -17,236 +17,54 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
-  polling: true,
-});
+const bot = new TelegramBot(
+  process.env.TELEGRAM_BOT_TOKEN,
+  {
+    polling: true,
+  }
+);
 
 bot.on("message", async (msg) => {
+
   try {
+
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    console.log("User:", text);
+    if (!text) return;
 
-    // CREATE PROJECT COMMAND
-    if (text.toLowerCase().startsWith("create project")) {
+    console.log("USER:", text);
 
-      const lines = text.split("\n");
+    // AI UNDERSTANDING
+    const completion =
+      await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
 
-      let clientName = "";
-      let projectName = "";
-      let vertical = "";
+        response_format: {
+          type: "json_object",
+        },
 
-      lines.forEach((line) => {
-
-        if (line.toLowerCase().includes("client:")) {
-          clientName = line.split(":")[1]?.trim();
-        }
-
-        if (line.toLowerCase().includes("project:")) {
-          projectName = line.split(":")[1]?.trim();
-        }
-
-        if (line.toLowerCase().includes("vertical:")) {
-          vertical = line.split(":")[1]?.trim();
-        }
-
-      });
-
-      // CHECK CLIENT
-      let clientId = null;
-
-      const { data: existingClient } = await supabase
-        .from("clients")
-        .select("*")
-        .eq("client_name", clientName)
-        .single();
-
-      if (existingClient) {
-
-        clientId = existingClient.id;
-
-      } else {
-
-        const { data: newClient, error: clientError } = await supabase
-          .from("clients")
-          .insert([
-            {
-              client_name: clientName,
-            },
-          ])
-          .select()
-          .single();
-
-        if (clientError) {
-          throw clientError;
-        }
-
-        clientId = newClient.id;
-      }
-
-      // CREATE PROJECT
-      const projectCode =
-        "PRJ-" + Math.floor(Math.random() * 100000);
-
-      const { data: project, error: projectError } =
-        await supabase
-          .from("projects")
-          .insert([
-            {
-              project_name: projectName,
-              client_id: clientId,
-              vertical: vertical,
-              project_code: projectCode,
-              status: "Active",
-            },
-          ])
-          .select()
-          .single();
-
-      if (projectError) {
-        throw projectError;
-      }
-
-      return bot.sendMessage(
-        chatId,
-        `✅ Project Created
-
-Project: ${project.project_name}
-Code: ${project.project_code}
-Vertical: ${project.vertical}`
-      );
-    }
-    // EXPENSE ENTRY
-    if (text.toLowerCase().startsWith("expense")) {
-
-      const lines = text.split("\n");
-
-      let projectName = "";
-      let type = "";
-      let amount = 0;
-      let vendorName = "";
-      let note = "";
-
-      lines.forEach((line) => {
-
-        if (line.toLowerCase().includes("project:")) {
-          projectName = line.split(":")[1]?.trim();
-        }
-
-        if (line.toLowerCase().includes("type:")) {
-          type = line.split(":")[1]?.trim();
-        }
-
-        if (line.toLowerCase().includes("amount:")) {
-          amount = Number(
-            line.split(":")[1]?.trim()
-          );
-        }
-
-        if (line.toLowerCase().includes("vendor:")) {
-          vendorName = line.split(":")[1]?.trim();
-        }
-
-        if (line.toLowerCase().includes("note:")) {
-          note = line.split(":")[1]?.trim();
-        }
-
-      });
-
-      // FIND PROJECT
-      const { data: projectData } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("project_name", projectName)
-        .single();
-
-      if (!projectData) {
-
-        return bot.sendMessage(
-          chatId,
-          "Project not found."
-        );
-
-      }
-
-      // FIND OR CREATE VENDOR
-      let vendorId = null;
-
-      const { data: existingVendor } = await supabase
-        .from("vendors")
-        .select("*")
-        .eq("vendor_name", vendorName)
-        .single();
-
-      if (existingVendor) {
-
-        vendorId = existingVendor.id;
-
-      } else {
-
-        const { data: newVendor } = await supabase
-          .from("vendors")
-          .insert([
-            {
-              vendor_name: vendorName,
-            },
-          ])
-          .select()
-          .single();
-
-        vendorId = newVendor.id;
-      }
-
-      // INSERT TRANSACTION
-      const { error: transactionError } =
-        await supabase
-          .from("transactions")
-          .insert([
-            {
-              project_id: projectData.id,
-              type: "Expense",
-              category: type,
-              amount: amount,
-              vendor_id: vendorId,
-              notes: note,
-              payment_status: "Paid",
-            },
-          ]);
-
-      if (transactionError) {
-        throw transactionError;
-      }
-
-      return bot.sendMessage(
-        chatId,
-        `✅ Expense Saved
-
-Project: ${projectName}
-Amount: ₹${amount}
-Vendor: ${vendorName}
-Type: ${type}`
-      );
-    }
-    
-    // NORMAL AI CHAT
-const completion =
-  await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
-
-    response_format: {
-      type: "json_object",
-    },
-
-    messages: [
-      {
-        role: "system",
-        content: `
+        messages: [
+          {
+            role: "system",
+            content: `
 You are VR Construction AI Assistant.
 
-You must analyze the user's message and return ONLY valid JSON.
+You are an intelligent assistant for a construction business owner.
 
-Response format:
+The user talks casually in English, Hindi, or mixed language.
+
+You must:
+- understand natural chatting
+- detect intent
+- extract data
+- ask for missing fields naturally
+- behave like a real assistant
+- always call user "sir"
+
+Return ONLY valid JSON.
+
+FORMAT:
 
 {
   "intent": "",
@@ -255,75 +73,308 @@ Response format:
   "missing_fields": []
 }
 
-Possible intents:
-- create_project
-- expense
+INTENTS:
 - labour_payment
+- expense
 - attendance
 - quotation
+- create_project
 - report
 - general_chat
 
-Examples:
+EXAMPLES:
 
-User:
-"Raju ko 5000 advance diya online"
+USER:
+"Raju ko 5000 advance diya"
 
-Return:
+RETURN:
 {
   "intent": "labour_payment",
-  "message": "Sir, ₹5000 advance payment for Raju recorded.",
+  "message": "Sir ₹5000 payment for Raju noted. Cash tha ya online?",
   "data": {
     "labour_name": "Raju",
     "amount": 5000,
-    "mode": "online",
     "payment_type": "advance"
   },
-  "missing_fields": []
+  "missing_fields": ["mode"]
 }
 
-User:
+USER:
 "cement kharida"
 
-Return:
+RETURN:
 {
   "intent": "expense",
-  "message": "Sir amount kitna tha and which project should I record this under?",
+  "message": "Sir amount kitna tha aur kis project me add karna hai?",
   "data": {
     "category": "material"
   },
   "missing_fields": ["amount", "project"]
 }
 
-Always:
-- understand casual language
-- understand Hindi + English mixed language
-- ask for missing important details
-- always call user sir
-- keep responses short and natural
+USER:
+"quotation SHK ko bhej diya"
+
+RETURN:
+{
+  "intent": "quotation",
+  "message": "Okay sir. Quotation amount kitna tha aur kaunsa project tha?",
+  "data": {
+    "client": "SHK"
+  },
+  "missing_fields": ["amount", "project"]
+}
+
+Always keep replies short and natural.
 `
-      },
+          },
 
-      {
-        role: "user",
-        content: text,
-      },
-    ],
-  });
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+      });
 
-const aiResponse = JSON.parse(
-  completion.choices[0].message.content
-);
+    // PARSE AI RESPONSE
+    const aiResponse = JSON.parse(
+      completion.choices[0].message.content
+    );
 
-console.log(aiResponse);
+    console.log("AI:", aiResponse);
 
-const replyMessage =
-  aiResponse.message || "Done sir.";
+    const intent =
+      aiResponse.intent || "general_chat";
 
-bot.sendMessage(
-  chatId,
-  replyMessage
-);
+    const data =
+      aiResponse.data || {};
+
+    const missingFields =
+      aiResponse.missing_fields || [];
+
+    // IF DETAILS MISSING
+    if (missingFields.length > 0) {
+
+      return bot.sendMessage(
+        chatId,
+        aiResponse.message
+      );
+
+    }
+
+    // =========================
+    // LABOUR PAYMENT
+    // =========================
+
+    if (intent === "labour_payment") {
+
+      const labourName =
+        data.labour_name || "Unknown";
+
+      const amount =
+        data.amount || 0;
+
+      const mode =
+        data.mode || "cash";
+
+      const paymentType =
+        data.payment_type || "regular";
+
+      await supabase
+        .from("labour_payments")
+        .insert([
+          {
+            labour_name: labourName,
+            amount: amount,
+            mode: mode,
+            payment_type: paymentType,
+          },
+        ]);
+
+      return bot.sendMessage(
+        chatId,
+        `✅ Payment recorded sir
+
+Labour: ${labourName}
+Amount: ₹${amount}
+Mode: ${mode}`
+      );
+    }
+
+    // =========================
+    // EXPENSE ENTRY
+    // =========================
+
+    if (intent === "expense") {
+
+      const category =
+        data.category || "General";
+
+      const amount =
+        data.amount || 0;
+
+      const project =
+        data.project || "General";
+
+      await supabase
+        .from("transactions")
+        .insert([
+          {
+            type: "Expense",
+            category: category,
+            amount: amount,
+            notes: project,
+          },
+        ]);
+
+      return bot.sendMessage(
+        chatId,
+        `✅ Expense recorded sir
+
+Category: ${category}
+Amount: ₹${amount}
+Project: ${project}`
+      );
+    }
+
+    // =========================
+    // ATTENDANCE
+    // =========================
+
+    if (intent === "attendance") {
+
+      const labourName =
+        data.labour_name || "Unknown";
+
+      const shift =
+        data.shift || "full";
+
+      await supabase
+        .from("attendance")
+        .insert([
+          {
+            labour_name: labourName,
+            shift: shift,
+          },
+        ]);
+
+      return bot.sendMessage(
+        chatId,
+        `✅ Attendance marked sir
+
+Labour: ${labourName}
+Shift: ${shift}`
+      );
+    }
+
+    // =========================
+    // CREATE PROJECT
+    // =========================
+
+    if (intent === "create_project") {
+
+      const projectName =
+        data.project_name;
+
+      const clientName =
+        data.client_name;
+
+      const vertical =
+        data.vertical || "General";
+
+      let clientId = null;
+
+      const { data: existingClient } =
+        await supabase
+          .from("clients")
+          .select("*")
+          .eq(
+            "client_name",
+            clientName
+          )
+          .single();
+
+      if (existingClient) {
+
+        clientId = existingClient.id;
+
+      } else {
+
+        const { data: newClient } =
+          await supabase
+            .from("clients")
+            .insert([
+              {
+                client_name: clientName,
+              },
+            ])
+            .select()
+            .single();
+
+        clientId = newClient.id;
+      }
+
+      const projectCode =
+        "PRJ-" +
+        Math.floor(
+          Math.random() * 100000
+        );
+
+      await supabase
+        .from("projects")
+        .insert([
+          {
+            project_name: projectName,
+            client_id: clientId,
+            vertical: vertical,
+            project_code: projectCode,
+            status: "Active",
+          },
+        ]);
+
+      return bot.sendMessage(
+        chatId,
+        `✅ Project created sir
+
+Project: ${projectName}
+Client: ${clientName}
+Vertical: ${vertical}`
+      );
+    }
+
+    // =========================
+    // QUOTATION
+    // =========================
+
+    if (intent === "quotation") {
+
+      return bot.sendMessage(
+        chatId,
+        "✅ Quotation update noted sir."
+      );
+    }
+
+    // =========================
+    // REPORT
+    // =========================
+
+    if (intent === "report") {
+
+      return bot.sendMessage(
+        chatId,
+        "Sir reporting module coming next."
+      );
+    }
+
+    // =========================
+    // GENERAL CHAT
+    // =========================
+
+    return bot.sendMessage(
+      chatId,
+      aiResponse.message ||
+      "Yes sir."
+    );
 
   } catch (error) {
 
@@ -331,49 +382,55 @@ bot.sendMessage(
 
     bot.sendMessage(
       msg.chat.id,
-      "AI error occurred."
+      "AI error occurred sir."
     );
   }
 });
 
+// HOME
 app.get("/", (req, res) => {
-  res.send("VR Construction AI Running");
+  res.send(
+    "VR Construction AI Running"
+  );
 });
 
+// TEST DB
 app.get("/test-db", async (req, res) => {
 
   try {
 
-    const { data, error } = await supabase
-      .from("projects")
-      .select("*")
-      .limit(1);
+    const { data, error } =
+      await supabase
+        .from("projects")
+        .select("*")
+        .limit(1);
 
     if (error) {
-      return res.status(500).json({
-        success: false,
-        error: error,
-      });
+      throw error;
     }
 
     res.json({
       success: true,
-      data: data,
+      data,
     });
 
   } catch (err) {
 
-    res.status(500).json({
+    res.json({
       success: false,
       error: err.message,
     });
 
   }
-
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT =
+  process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
+
+  console.log(
+    `Server running on ${PORT}`
+  );
+
 });
