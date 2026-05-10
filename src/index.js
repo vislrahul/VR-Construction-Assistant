@@ -24,17 +24,13 @@ const bot = new TelegramBot(
   }
 );
 
+// =========================
+// USER MEMORY
+// =========================
+
 const userMemory = {};
 
-bot.on("message", async (msg) => {
-
-  try {
-
-    const chatId = msg.chat.id;
-    const text = msg.text;
-    
-    // USER MEMORY
-if (!userMemory[chatId]) {
+function clearMemory(chatId) {
 
   userMemory[chatId] = {
     pendingIntent: null,
@@ -43,26 +39,51 @@ if (!userMemory[chatId]) {
 
 }
 
-const memory =
-  userMemory[chatId];
+// =========================
+// TELEGRAM BOT
+// =========================
+
+bot.on("message", async (msg) => {
+
+  try {
+
+    const chatId = msg.chat.id;
+    const text = msg.text;
 
     if (!text) return;
 
+    // CREATE USER MEMORY
+    if (!userMemory[chatId]) {
+
+      userMemory[chatId] = {
+        pendingIntent: null,
+        data: {},
+      };
+
+    }
+
+    const memory =
+      userMemory[chatId];
+
     console.log("USER:", text);
 
+    // =========================
     // AI UNDERSTANDING
+    // =========================
+
     const completion =
       await openai.chat.completions.create({
+
         model: "gpt-4.1-mini",
 
         response_format: {
           type: "json_object",
         },
 
-       messages: [
-  {
-    role: "system",
-    content: `
+        messages: [
+          {
+            role: "system",
+            content: `
 You are VR Construction AI Assistant.
 
 You are a smart conversational AI assistant for a construction business owner.
@@ -147,18 +168,21 @@ RETURN:
   "missing_fields": []
 }
 
-Always keep responses short and natural.
+Always keep replies short and natural.
 `
-  },
+          },
 
-  {
-    role: "user",
-    content: text,
-  },
-],
-});
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+      });
 
+    // =========================
     // PARSE AI RESPONSE
+    // =========================
+
     const aiResponse = JSON.parse(
       completion.choices[0].message.content
     );
@@ -168,30 +192,41 @@ Always keep responses short and natural.
     const intent =
       aiResponse.intent || "general_chat";
 
-    const data =
-      aiResponse.data || {};
+    // MERGE MEMORY + NEW DATA
+    const data = {
+      ...memory.data,
+      ...(aiResponse.data || {}),
+    };
+
+    // CLEAN EMPTY VALUES
+    Object.keys(data).forEach((key) => {
+
+      if (
+        data[key] === null ||
+        data[key] === "" ||
+        data[key] === undefined
+      ) {
+        delete data[key];
+      }
+
+    });
 
     const missingFields =
       aiResponse.missing_fields || [];
 
     // SAVE MEMORY
-memory.pendingIntent = intent;
+    memory.pendingIntent = intent;
 
-memory.data = {
-  ...memory.data,
-  ...data,
-};
+    memory.data = data;
 
-userMemory[chatId] = memory;
+    userMemory[chatId] = memory;
 
+    // =========================
     // IF DETAILS MISSING
+    // =========================
+
     if (missingFields.length > 0) {
 
-    // CLEAR MEMORY
-userMemory[chatId] = {
-  pendingIntent: null,
-  data: {},
-};
       return bot.sendMessage(
         chatId,
         aiResponse.message
@@ -228,18 +263,21 @@ userMemory[chatId] = {
           },
         ]);
 
+      clearMemory(chatId);
+
       return bot.sendMessage(
         chatId,
         `✅ Payment recorded sir
 
 Labour: ${labourName}
 Amount: ₹${amount}
-Mode: ${mode}`
+Mode: ${mode}
+Type: ${paymentType}`
       );
     }
 
     // =========================
-    // EXPENSE ENTRY
+    // EXPENSE
     // =========================
 
     if (intent === "expense") {
@@ -263,6 +301,8 @@ Mode: ${mode}`
             notes: project,
           },
         ]);
+
+      clearMemory(chatId);
 
       return bot.sendMessage(
         chatId,
@@ -295,6 +335,8 @@ Project: ${project}`
           },
         ]);
 
+      clearMemory(chatId);
+
       return bot.sendMessage(
         chatId,
         `✅ Attendance marked sir
@@ -311,10 +353,10 @@ Shift: ${shift}`
     if (intent === "create_project") {
 
       const projectName =
-        data.project_name;
+        data.project_name || "Untitled Project";
 
       const clientName =
-        data.client_name;
+        data.client_name || "Unknown Client";
 
       const vertical =
         data.vertical || "General";
@@ -349,6 +391,7 @@ Shift: ${shift}`
             .single();
 
         clientId = newClient.id;
+
       }
 
       const projectCode =
@@ -369,6 +412,8 @@ Shift: ${shift}`
           },
         ]);
 
+      clearMemory(chatId);
+
       return bot.sendMessage(
         chatId,
         `✅ Project created sir
@@ -384,6 +429,8 @@ Vertical: ${vertical}`
     // =========================
 
     if (intent === "quotation") {
+
+      clearMemory(chatId);
 
       return bot.sendMessage(
         chatId,
@@ -422,16 +469,25 @@ Vertical: ${vertical}`
       "AI error occurred sir."
     );
   }
+
 });
 
+// =========================
 // HOME
+// =========================
+
 app.get("/", (req, res) => {
+
   res.send(
     "VR Construction AI Running"
   );
+
 });
 
-// TEST DB
+// =========================
+// TEST DATABASE
+// =========================
+
 app.get("/test-db", async (req, res) => {
 
   try {
@@ -459,7 +515,12 @@ app.get("/test-db", async (req, res) => {
     });
 
   }
+
 });
+
+// =========================
+// START SERVER
+// =========================
 
 const PORT =
   process.env.PORT || 3000;
