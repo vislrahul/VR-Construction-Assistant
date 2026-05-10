@@ -311,22 +311,20 @@ Always:
     ],
   });
 
-    const reply =
-      completion.choices[0].message.content;
+    const aiResponse = JSON.parse(
+  completion.choices[0].message.content
+);
 
-    bot.sendMessage(chatId, reply);
+console.log(aiResponse);
 
-  } catch (error) {
+const replyMessage =
+  aiResponse.message || "Done sir.";
 
-    console.log(error);
-
-    bot.sendMessage(
-      msg.chat.id,
-      "AI error occurred."
-    );
-  }
-});
-
+bot.sendMessage(
+  chatId,
+  replyMessage
+);
+    
 app.get("/", (req, res) => {
   res.send("VR Construction AI Running");
 });
