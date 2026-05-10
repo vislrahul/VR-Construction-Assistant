@@ -37,21 +37,32 @@ const bot = new TelegramBot(
 );
 
 // =========================
-// CLEAR MEMORY
+// MEMORY FUNCTIONS
 // =========================
 
-async function clearMemory(chatId) {
+async function loadMemory(chatId) {
 
-  await supabase
+  const { data } = await supabase
     .from("conversation_memory")
-    .delete()
-    .eq("chat_id", String(chatId));
+    .select("*")
+    .eq("chat_id", String(chatId))
+    .maybeSingle();
+
+  if (!data) {
+
+    return {
+      pendingIntent: null,
+      data: {},
+    };
+
+  }
+
+  return {
+    pendingIntent: data.pending_intent,
+    data: data.memory_data || {},
+  };
 
 }
-
-// =========================
-// SAVE MEMORY
-// =========================
 
 async function saveMemory(
   chatId,
@@ -72,34 +83,12 @@ async function saveMemory(
 
 }
 
-// =========================
-// LOAD MEMORY
-// =========================
+async function clearMemory(chatId) {
 
-async function loadMemory(chatId) {
-
-  const { data } =
-    await supabase
-      .from("conversation_memory")
-      .select("*")
-      .eq("chat_id", String(chatId))
-      .single();
-
-  if (!data) {
-
-    return {
-      pendingIntent: null,
-      data: {},
-    };
-
-  }
-
-  return {
-    pendingIntent:
-      data.pending_intent,
-    data:
-      data.memory_data || {},
-  };
+  await supabase
+    .from("conversation_memory")
+    .delete()
+    .eq("chat_id", String(chatId));
 
 }
 
@@ -144,11 +133,7 @@ bot.on("message", async (msg) => {
             content: `
 You are VR Construction AI Assistant.
 
-You are a smart AI assistant for a construction company owner.
-
-You behave like a real human assistant.
-
-You must continue previous incomplete conversations naturally.
+You are a smart assistant for construction business management.
 
 CURRENT PENDING INTENT:
 ${memory.pendingIntent || "none"}
@@ -158,20 +143,13 @@ ${JSON.stringify(memory.data)}
 
 IMPORTANT RULES:
 
-- Understand casual chatting
 - Understand Hindi + English mixed language
 - Understand follow-up replies
-- Understand partial answers
 - Never ask again for details already provided
-- If memory already contains labour_name, amount, mode, payment_type, project or other fields, NEVER ask for them again
-- Always use saved memory intelligently
-- Follow-up replies like "online", "phonepe", "advance", "today", "Raju", "5000" belong to previous pending conversation
-- Do not restart conversation unless user changes topic completely
-- If enough details are available after merging memory, complete the task immediately
-- Merge old conversation memory with new replies
-- Always behave intelligently
-- Always call the user "sir"
-- Keep replies short and natural
+- Merge previous memory with new replies
+- Behave like a real assistant
+- Always call user "sir"
+- Keep replies short
 
 RETURN ONLY VALID JSON.
 
@@ -196,7 +174,7 @@ VALID INTENTS:
 EXAMPLES:
 
 USER:
-"paid 4100 advance to Raju"
+"paid 5000 advance to Raju"
 
 RETURN:
 {
@@ -204,7 +182,7 @@ RETURN:
   "message": "Sir payment cash tha ya online?",
   "data": {
     "labour_name": "Raju",
-    "amount": 4100,
+    "amount": 5000,
     "payment_type": "advance"
   },
   "missing_fields": ["mode"]
@@ -216,7 +194,7 @@ USER:
 RETURN:
 {
   "intent": "labour_payment",
-  "message": "Okay sir. Payment recorded successfully.",
+  "message": "Okay sir payment recorded.",
   "data": {
     "mode": "online",
     "bank": "PhonePe"
@@ -230,25 +208,12 @@ USER:
 RETURN:
 {
   "intent": "expense",
-  "message": "Sir which project should I record this under?",
+  "message": "Sir kis project ke liye?",
   "data": {
     "category": "material",
     "amount": 3200
   },
   "missing_fields": ["project"]
-}
-
-USER:
-"Anjali Ghadge site"
-
-RETURN:
-{
-  "intent": "expense",
-  "message": "Okay sir. Expense recorded.",
-  "data": {
-    "project": "Anjali Ghadge site"
-  },
-  "missing_fields": []
 }
 
 Always return valid JSON only.
@@ -263,7 +228,7 @@ Always return valid JSON only.
       });
 
     // =========================
-    // PARSE RESPONSE
+    // PARSE AI RESPONSE
     // =========================
 
     const aiResponse = JSON.parse(
@@ -273,12 +238,7 @@ Always return valid JSON only.
     console.log("AI:", aiResponse);
 
     const intent =
-      aiResponse.intent ||
-      "general_chat";
-
-    // =========================
-    // MERGE MEMORY
-    // =========================
+      aiResponse.intent || "general_chat";
 
     const mergedData = {
       ...memory.data,
@@ -447,106 +407,108 @@ Shift: ${shift}`
 
     }
 
-   // =========================
-// CREATE PROJECT
-// =========================
+    // =========================
+    // CREATE PROJECT
+    // =========================
 
-if (intent === "create_project") {
+    if (intent === "create_project") {
 
-  const projectName =
-    memory.data.project_name ||
-    data.project_name;
+      const projectName =
+        mergedData.project_name;
 
-  const clientName =
-    memory.data.client_name ||
-    data.client_name;
+      const clientName =
+        mergedData.client_name;
 
-  const vertical =
-    memory.data.vertical ||
-    data.vertical ||
-    "General";
+      const vertical =
+        mergedData.vertical || "General";
 
-  // CHECK MISSING
-  if (!projectName || !clientName) {
+      if (!projectName || !clientName) {
 
-    return bot.sendMessage(
-      chatId,
-      "Sir project name and client name required."
-    );
-  }
+        return bot.sendMessage(
+          chatId,
+          "Sir project name and client name required."
+        );
 
-  let clientId = null;
+      }
 
-  // FIND CLIENT
-  const { data: existingClient } =
-    await supabase
-      .from("clients")
-      .select("*")
-      .eq("client_name", clientName)
-      .maybeSingle();
+      let clientId = null;
 
-  if (existingClient) {
+      const {
+        data: existingClient,
+      } = await supabase
+        .from("clients")
+        .select("*")
+        .eq("client_name", clientName)
+        .maybeSingle();
 
-    clientId = existingClient.id;
+      if (existingClient) {
 
-  } else {
+        clientId = existingClient.id;
 
-    const {
-      data: newClient,
-      error: clientError,
-    } = await supabase
-      .from("clients")
-      .insert([
-        {
-          client_name: clientName,
-        },
-      ])
-      .select()
-      .single();
+      } else {
 
-    if (clientError) {
-      console.log(clientError);
-      throw clientError;
-    }
+        const {
+          data: newClient,
+          error: clientError,
+        } = await supabase
+          .from("clients")
+          .insert([
+            {
+              client_name: clientName,
+            },
+          ])
+          .select()
+          .single();
 
-    clientId = newClient.id;
-  }
+        if (clientError) {
 
-  const projectCode =
-    "PRJ-" +
-    Math.floor(Math.random() * 100000);
+          console.log(clientError);
+          throw clientError;
 
-  const {
-    error: projectError,
-  } = await supabase
-    .from("projects")
-    .insert([
-      {
-        project_name: projectName,
-        client_id: clientId,
-        vertical: vertical,
-        project_code: projectCode,
-        status: "Active",
-      },
-    ]);
+        }
 
-  if (projectError) {
-    console.log(projectError);
-    throw projectError;
-  }
+        clientId = newClient.id;
 
-  // CLEAR MEMORY
-  await clearMemory(chatId);
+      }
 
-  return bot.sendMessage(
-    chatId,
-    `✅ Project created sir
+      const projectCode =
+        "PRJ-" +
+        Math.floor(Math.random() * 100000);
+
+      const {
+        error: projectError,
+      } = await supabase
+        .from("projects")
+        .insert([
+          {
+            project_name: projectName,
+            client_id: clientId,
+            vertical: vertical,
+            project_code: projectCode,
+            status: "Active",
+          },
+        ]);
+
+      if (projectError) {
+
+        console.log(projectError);
+        throw projectError;
+
+      }
+
+      await clearMemory(chatId);
+
+      return bot.sendMessage(
+        chatId,
+        `✅ Project created sir
 
 Project: ${projectName}
 Client: ${clientName}
 Vertical: ${vertical}`
-  );
-}
+      );
+
+    }
+
     // =========================
     // QUOTATION
     // =========================
@@ -581,32 +543,34 @@ Vertical: ${vertical}`
 
     return bot.sendMessage(
       chatId,
-      aiResponse.message ||
-      "Yes sir."
+      aiResponse.message || "Yes sir."
     );
 
- } catch (error) {
+  } catch (error) {
 
-  console.log("FULL ERROR:");
-  console.log(error);
+    console.log("FULL ERROR:");
+    console.log(error);
 
-  if (error.message) {
-    console.log("MESSAGE:", error.message);
+    if (error.message) {
+      console.log("MESSAGE:", error.message);
+    }
+
+    if (error.details) {
+      console.log("DETAILS:", error.details);
+    }
+
+    if (error.hint) {
+      console.log("HINT:", error.hint);
+    }
+
+    bot.sendMessage(
+      msg.chat.id,
+      "AI error occurred sir."
+    );
+
   }
 
-  if (error.details) {
-    console.log("DETAILS:", error.details);
-  }
-
-  if (error.hint) {
-    console.log("HINT:", error.hint);
-  }
-
-  bot.sendMessage(
-    msg.chat.id,
-    "AI error occurred sir."
-  );
-}
+});
 
 // =========================
 // HOME
@@ -621,7 +585,7 @@ app.get("/", (req, res) => {
 });
 
 // =========================
-// TEST DATABASE
+// TEST DB
 // =========================
 
 app.get("/test-db", async (req, res) => {
