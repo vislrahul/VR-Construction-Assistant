@@ -8,14 +8,26 @@ dotenv.config();
 
 const app = express();
 
+// =========================
+// OPENAI
+// =========================
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+// =========================
+// SUPABASE
+// =========================
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
 );
+
+// =========================
+// TELEGRAM
+// =========================
 
 const bot = new TelegramBot(
   process.env.TELEGRAM_BOT_TOKEN,
@@ -25,17 +37,15 @@ const bot = new TelegramBot(
 );
 
 // =========================
-// USER MEMORY
+// CLEAR MEMORY FUNCTION
 // =========================
 
-const userMemory = {};
+async function clearMemory(chatId) {
 
-function clearMemory(chatId) {
-
-  userMemory[chatId] = {
-    pendingIntent: null,
-    data: {},
-  };
+  await supabase
+    .from("conversation_memory")
+    .delete()
+    .eq("chat_id", String(chatId));
 
 }
 
@@ -52,20 +62,33 @@ bot.on("message", async (msg) => {
 
     if (!text) return;
 
-    // CREATE USER MEMORY
-    if (!userMemory[chatId]) {
+    console.log("USER:", text);
 
-      userMemory[chatId] = {
-        pendingIntent: null,
-        data: {},
-      };
+    // =========================
+    // LOAD MEMORY FROM SUPABASE
+    // =========================
+
+    let memory = {
+      pendingIntent: null,
+      data: {},
+    };
+
+    const { data: memoryRow } =
+      await supabase
+        .from("conversation_memory")
+        .select("*")
+        .eq("chat_id", String(chatId))
+        .single();
+
+    if (memoryRow) {
+
+      memory.pendingIntent =
+        memoryRow.pending_intent;
+
+      memory.data =
+        memoryRow.memory_data || {};
 
     }
-
-    const memory =
-      userMemory[chatId];
-
-    console.log("USER:", text);
 
     // =========================
     // AI UNDERSTANDING
@@ -192,13 +215,17 @@ Always keep replies short and natural.
     const intent =
       aiResponse.intent || "general_chat";
 
-    // MERGE MEMORY + NEW DATA
+    // =========================
+    // MERGE OLD + NEW DATA
+    // =========================
+
     const data = {
       ...memory.data,
       ...(aiResponse.data || {}),
     };
 
-    // CLEAN EMPTY VALUES
+    // REMOVE EMPTY VALUES
+
     Object.keys(data).forEach((key) => {
 
       if (
@@ -206,7 +233,9 @@ Always keep replies short and natural.
         data[key] === "" ||
         data[key] === undefined
       ) {
+
         delete data[key];
+
       }
 
     });
@@ -214,15 +243,30 @@ Always keep replies short and natural.
     const missingFields =
       aiResponse.missing_fields || [];
 
-    // SAVE MEMORY
+    // =========================
+    // SAVE MEMORY TO SUPABASE
+    // =========================
+
     memory.pendingIntent = intent;
 
     memory.data = data;
 
-    userMemory[chatId] = memory;
+    await supabase
+      .from("conversation_memory")
+      .upsert([
+        {
+          chat_id: String(chatId),
+          pending_intent:
+            memory.pendingIntent,
+          memory_data:
+            memory.data,
+          updated_at:
+            new Date().toISOString(),
+        },
+      ]);
 
     // =========================
-    // IF DETAILS MISSING
+    // ASK FOR MISSING DETAILS
     // =========================
 
     if (missingFields.length > 0) {
@@ -263,7 +307,7 @@ Always keep replies short and natural.
           },
         ]);
 
-      clearMemory(chatId);
+      await clearMemory(chatId);
 
       return bot.sendMessage(
         chatId,
@@ -274,6 +318,7 @@ Amount: ₹${amount}
 Mode: ${mode}
 Type: ${paymentType}`
       );
+
     }
 
     // =========================
@@ -302,7 +347,7 @@ Type: ${paymentType}`
           },
         ]);
 
-      clearMemory(chatId);
+      await clearMemory(chatId);
 
       return bot.sendMessage(
         chatId,
@@ -312,6 +357,7 @@ Category: ${category}
 Amount: ₹${amount}
 Project: ${project}`
       );
+
     }
 
     // =========================
@@ -335,7 +381,7 @@ Project: ${project}`
           },
         ]);
 
-      clearMemory(chatId);
+      await clearMemory(chatId);
 
       return bot.sendMessage(
         chatId,
@@ -344,6 +390,7 @@ Project: ${project}`
 Labour: ${labourName}
 Shift: ${shift}`
       );
+
     }
 
     // =========================
@@ -412,7 +459,7 @@ Shift: ${shift}`
           },
         ]);
 
-      clearMemory(chatId);
+      await clearMemory(chatId);
 
       return bot.sendMessage(
         chatId,
@@ -422,6 +469,7 @@ Project: ${projectName}
 Client: ${clientName}
 Vertical: ${vertical}`
       );
+
     }
 
     // =========================
@@ -430,12 +478,13 @@ Vertical: ${vertical}`
 
     if (intent === "quotation") {
 
-      clearMemory(chatId);
+      await clearMemory(chatId);
 
       return bot.sendMessage(
         chatId,
         "✅ Quotation update noted sir."
       );
+
     }
 
     // =========================
@@ -448,6 +497,7 @@ Vertical: ${vertical}`
         chatId,
         "Sir reporting module coming next."
       );
+
     }
 
     // =========================
@@ -468,6 +518,7 @@ Vertical: ${vertical}`
       msg.chat.id,
       "AI error occurred sir."
     );
+
   }
 
 });
