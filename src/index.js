@@ -447,88 +447,106 @@ Shift: ${shift}`
 
     }
 
-    // =========================
-    // CREATE PROJECT
-    // =========================
+   // =========================
+// CREATE PROJECT
+// =========================
 
-    if (intent === "create_project") {
+if (intent === "create_project") {
 
-      const projectName =
-        mergedData.project_name ||
-        "Untitled Project";
+  const projectName =
+    memory.data.project_name ||
+    data.project_name;
 
-      const clientName =
-        mergedData.client_name ||
-        "Unknown Client";
+  const clientName =
+    memory.data.client_name ||
+    data.client_name;
 
-      const vertical =
-        mergedData.vertical ||
-        "General";
+  const vertical =
+    memory.data.vertical ||
+    data.vertical ||
+    "General";
 
-      let clientId = null;
+  // CHECK MISSING
+  if (!projectName || !clientName) {
 
-      const { data: existingClient } =
-        await supabase
-          .from("clients")
-          .select("*")
-          .eq(
-            "client_name",
-            clientName
-          )
-          .single();
+    return bot.sendMessage(
+      chatId,
+      "Sir project name and client name required."
+    );
+  }
 
-      if (existingClient) {
+  let clientId = null;
 
-        clientId = existingClient.id;
+  // FIND CLIENT
+  const { data: existingClient } =
+    await supabase
+      .from("clients")
+      .select("*")
+      .eq("client_name", clientName)
+      .maybeSingle();
 
-      } else {
+  if (existingClient) {
 
-        const { data: newClient } =
-          await supabase
-            .from("clients")
-            .insert([
-              {
-                client_name: clientName,
-              },
-            ])
-            .select()
-            .single();
+    clientId = existingClient.id;
 
-        clientId = newClient.id;
+  } else {
 
-      }
+    const {
+      data: newClient,
+      error: clientError,
+    } = await supabase
+      .from("clients")
+      .insert([
+        {
+          client_name: clientName,
+        },
+      ])
+      .select()
+      .single();
 
-      const projectCode =
-        "PRJ-" +
-        Math.floor(
-          Math.random() * 100000
-        );
+    if (clientError) {
+      console.log(clientError);
+      throw clientError;
+    }
 
-      await supabase
-        .from("projects")
-        .insert([
-          {
-            project_name: projectName,
-            client_id: clientId,
-            vertical: vertical,
-            project_code: projectCode,
-            status: "Active",
-          },
-        ]);
+    clientId = newClient.id;
+  }
 
-      await clearMemory(chatId);
+  const projectCode =
+    "PRJ-" +
+    Math.floor(Math.random() * 100000);
 
-      return bot.sendMessage(
-        chatId,
-        `✅ Project created sir
+  const {
+    error: projectError,
+  } = await supabase
+    .from("projects")
+    .insert([
+      {
+        project_name: projectName,
+        client_id: clientId,
+        vertical: vertical,
+        project_code: projectCode,
+        status: "Active",
+      },
+    ]);
+
+  if (projectError) {
+    console.log(projectError);
+    throw projectError;
+  }
+
+  // CLEAR MEMORY
+  await clearMemory(chatId);
+
+  return bot.sendMessage(
+    chatId,
+    `✅ Project created sir
 
 Project: ${projectName}
 Client: ${clientName}
 Vertical: ${vertical}`
-      );
-
-    }
-
+  );
+}
     // =========================
     // QUOTATION
     // =========================
