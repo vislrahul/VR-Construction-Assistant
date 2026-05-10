@@ -186,6 +186,11 @@ userMemory[chatId] = memory;
     // IF DETAILS MISSING
     if (missingFields.length > 0) {
 
+    // CLEAR MEMORY
+userMemory[chatId] = {
+  pendingIntent: null,
+  data: {},
+};
       return bot.sendMessage(
         chatId,
         aiResponse.message
